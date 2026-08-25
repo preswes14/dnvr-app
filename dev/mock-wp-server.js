@@ -68,6 +68,37 @@ function makePost(i) {
 }
 const POSTS = Array.from({ length: 24 }, (_, i) => makePost(i));
 
+// ── Mock membership (mirrors the JWT Authentication plugin's contract) ─────
+// Sign in with diehard / sample. An authorized request sees the members-only
+// article (id 104) with its full body, the way a membership plugin serves it
+// to a signed-in member.
+const MOCK_USER = { username: 'diehard', password: 'sample', name: 'Sample Diehard' };
+const MOCK_TOKEN = 'mock-jwt-token-fixture';
+
+function isAuthorized(req) {
+  return (req.headers.authorization || '') === 'Bearer ' + MOCK_TOKEN;
+}
+
+function viewOf(post, authed) {
+  if (!post || !(post.content && post.content.protected) || !authed) return post;
+  return Object.assign({}, post, {
+    excerpt: { rendered: post.excerpt.rendered, protected: false },
+    content: {
+      rendered: `<p><strong>Members-only sample article, unlocked.</strong> You are seeing the full
+        body because the request carried a valid member token — this is exactly how a real
+        members-only article opens in-app for a signed-in member.</p>
+        <p>${LOREM[0]}</p><p>${LOREM[1]}</p>`,
+      protected: false
+    }
+  });
+}
+
+function readBody(req, cb) {
+  let data = '';
+  req.on('data', c => { data += c; });
+  req.on('end', () => cb(data));
+}
+
 // ── Server ─────────────────────────────────────────────────────────────────
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
@@ -87,13 +118,39 @@ http.createServer((req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const p = url.pathname;
 
+  if (req.method === 'OPTIONS') {
+    return send(res, 204, '', {
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    });
+  }
+
+  if (p === '/wp-json/jwt-auth/v1/token' && req.method === 'POST') {
+    return readBody(req, raw => {
+      let creds = {};
+      try { creds = JSON.parse(raw); } catch (e) { /* fall through to failure */ }
+      if (creds.username === MOCK_USER.username && creds.password === MOCK_USER.password) {
+        send(res, 200, JSON.stringify({
+          token: MOCK_TOKEN,
+          user_display_name: MOCK_USER.name,
+          user_nicename: MOCK_USER.username
+        }), { 'Content-Type': 'application/json' });
+      } else {
+        send(res, 403, JSON.stringify({
+          code: 'jwt_auth_failed',
+          message: '<strong>Error:</strong> The username or password you entered is incorrect.'
+        }), { 'Content-Type': 'application/json' });
+      }
+    });
+  }
+
   if (p === '/wp-json/wp/v2/categories') {
     return send(res, 200, JSON.stringify(CATEGORIES), { 'Content-Type': 'application/json' });
   }
 
   const single = p.match(/^\/wp-json\/wp\/v2\/posts\/(\d+)$/);
   if (single) {
-    const post = POSTS.find(x => x.id === +single[1]);
+    const post = viewOf(POSTS.find(x => x.id === +single[1]), isAuthorized(req));
     return post
       ? send(res, 200, JSON.stringify(post), { 'Content-Type': 'application/json' })
       : send(res, 404, JSON.stringify({ code: 'rest_post_invalid_id' }), { 'Content-Type': 'application/json' });
@@ -111,7 +168,8 @@ http.createServer((req, res) => {
     const perPage = +(url.searchParams.get('per_page') || 10);
     const page = +(url.searchParams.get('page') || 1);
     const totalPages = Math.max(1, Math.ceil(list.length / perPage));
-    const slice = list.slice((page - 1) * perPage, page * perPage);
+    const authed = isAuthorized(req);
+    const slice = list.slice((page - 1) * perPage, page * perPage).map(x => viewOf(x, authed));
     return send(res, 200, JSON.stringify(slice), {
       'Content-Type': 'application/json',
       'X-WP-Total': String(list.length),

@@ -7,7 +7,7 @@
  *
  * Bump VERSION on any deploy that changes app files.
  */
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.1.0';
 const SHELL_CACHE = 'dnvr-shell-' + VERSION;
 const API_CACHE = 'dnvr-api-v1';
 const IMG_CACHE = 'dnvr-img-v1';
@@ -81,19 +81,11 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Same-origin shell assets → cache-first.
-  if (url.origin === location.origin) {
-    event.respondWith((async () => {
-      const hit = await caches.match(req);
-      if (hit) return hit;
-      const res = await fetch(req);
-      if (res.ok) (await caches.open(SHELL_CACHE)).put(req, res.clone());
-      return res;
-    })());
-    return;
-  }
-
-  // WordPress API → network-first, cache fallback.
+  // WordPress API → network-first, cache fallback. MUST be checked before
+  // the same-origin shell branch: when the API is same-origin (app hosted on
+  // the WordPress domain, or the local dev mock), the shell branch's
+  // cache-first would freeze API responses forever — and serve a member's
+  // locked/unlocked state from whoever fetched first.
   if (url.pathname.includes('/wp-json/')) {
     event.respondWith((async () => {
       const cache = await caches.open(API_CACHE);
@@ -109,6 +101,18 @@ self.addEventListener('fetch', event => {
         if (hit) return hit;
         throw e;
       }
+    })());
+    return;
+  }
+
+  // Same-origin shell assets → cache-first.
+  if (url.origin === location.origin) {
+    event.respondWith((async () => {
+      const hit = await caches.match(req);
+      if (hit) return hit;
+      const res = await fetch(req);
+      if (res.ok) (await caches.open(SHELL_CACHE)).put(req, res.clone());
+      return res;
     })());
     return;
   }

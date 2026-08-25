@@ -41,6 +41,35 @@ window.DNVR_CONFIG = {
   // episode posts, if those live in their own category).
   EXCLUDED_SLUGS: [],
 
+  // ── Diehard membership ──────────────────────────────────────────────────
+  MEMBERSHIP: {
+    NAME: 'Diehard',
+    // Shown on locked articles in the feed and on the locked-article card.
+    BADGE: 'DIEHARD',
+    SIGNUP_URL: 'https://thednvr.com/join/',
+    // Shown on the Account screen and the locked-article card. Sourced from
+    // the public membership page — reword/trim freely.
+    BENEFITS: [
+      'Every members-only article, unlocked',
+      'Diehards-only Discord access',
+      '20% off merch and events · 15% off at the DNVR Bar',
+      'A free shirt at sign-up, and every year after'
+    ],
+    AUTH: {
+      // 'link' (default): locked articles send members to the website —
+      //   works today with zero site changes.
+      // 'jwt': members sign in INSIDE the app with their site login and
+      //   locked articles open in-app. Requires a one-time WordPress
+      //   plugin install — read "Letting Diehards sign in inside the app"
+      //   in SETUP_FOR_DNVR.md before switching this on. You can trial it
+      //   on the deployed app without editing this file via ?auth=jwt.
+      mode: 'link',
+      // Token endpoint for 'jwt' mode. null = the standard
+      // `<api root>/jwt-auth/v1/token` of the JWT Authentication plugin.
+      tokenEndpoint: null
+    }
+  },
+
   // ── Behavior ────────────────────────────────────────────────────────────
   POSTS_PER_PAGE: 20,
   // Re-fetch the feed automatically when the app regains focus after this

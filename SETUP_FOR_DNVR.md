@@ -73,23 +73,57 @@ browser dev console (F12) on desktop:
   edge-caches API responses for 60s, *reducing* load on your site.
 - **404 on `/wp-json/...`** — REST API disabled; see step 0.
 
-## Step 4 — Membership sanity check (10 minutes, recommended)
+## Step 4 — Diehards & members-only articles (15 minutes + optional upgrade)
 
-The app shows members-only articles as **excerpt + "Read on DNVR" button** —
-it renders exactly what your public API returns and never bypasses access
-controls. Worth checking once: open a members-only article's ID at
+Members-only articles are built into the app as a feature, in two stages:
+
+**Stage 1 — works today, nothing to configure.** Any article whose body the
+public API withholds gets a **DIEHARD badge** in the feed, and opening it shows
+a branded card: the membership benefits (edit the list in `js/config.js` →
+`MEMBERSHIP.BENEFITS`), a **Become a Diehard** button pointing at
+`thednvr.com/join/`, and a "read on the site" link for existing members. The
+app never bypasses access controls — it renders exactly what your API returns.
+
+One sanity check worth doing once: open a members-only article's ID at
 `https://thednvr.com/wp-json/wp/v2/posts/<id>` **in a logged-out browser**. If
 the full body appears there, your paywall plugin is leaving the REST API
 unrestricted — that's a site-wide setting worth tightening in the plugin
-regardless of this app (the app will then automatically show those articles as
-excerpt + link).
+regardless of this app. (If the body is withheld, the app's badge + card
+behavior is already correct.)
+
+**Stage 2 — optional: Diehards sign in inside the app.** The sign-in screen,
+token handling, unlock flow, and sign-out cleanup are already built and
+tested; they activate when your WordPress can issue login tokens:
+
+1. Install the free **"JWT Authentication for WP REST API"** plugin (or any
+   JWT auth plugin — the token endpoint is configurable) and add its secret
+   key to `wp-config.php` per the plugin's two-line instructions.
+2. **Trial it without touching config**: open the deployed app with
+   `?auth=jwt` appended and sign in with a test member account. Open a
+   members-only article — if it unlocks, you're done; `?auth=clear` ends the
+   trial. Whether the body actually unlocks for a signed-in subscriber
+   depends on your paywall plugin honoring authenticated REST reads — that's
+   the thing this trial tells you.
+3. If the trial works, make it permanent: `js/config.js` →
+   `MEMBERSHIP.AUTH.mode: 'jwt'`, re-upload.
+
+Security posture, for whoever reviews this: the app sends the password only
+to your own site's token endpoint (once, at sign-in), stores only the issued
+token on the reader's device, never edge-caches authenticated responses (the
+bundled Cloudflare Worker explicitly bypasses cache when an Authorization
+header is present), and wipes cached member content on sign-out. If your
+members sign in through a non-WordPress identity system instead, treat the
+built-in form as the scaffold to wire into it — everything downstream of
+"get a token" is done.
 
 ## Step 5 — Branding (30–60 minutes)
 
 All placeholders, clearly marked:
 
-- **Colors**: top of `css/app.css` — swap `--accent` (currently a placeholder
-  gold) for your brand color; light/dark palettes are token-driven.
+- **Colors**: top of `css/app.css` — the theme is already DNVR black +
+  yellow-gold matched to your public branding; if the exact style-guide value
+  differs, swap `--accent` (and `--accent-text` for light mode). Everything is
+  token-driven.
 - **Icons**: replace the four PNGs in `icons/` with renders of the real DNVR
   logo — sizes 512, 192, 180, plus a "maskable" 512 with the logo inside the
   middle ~76% (Android crops the edges). Keep the filenames.

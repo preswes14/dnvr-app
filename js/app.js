@@ -11,6 +11,7 @@
   'use strict';
 
   const CFG = window.DNVR_CONFIG;
+  const MEM = CFG.MEMBERSHIP || { NAME: 'Member', BADGE: 'MEMBERS', SIGNUP_URL: CFG.WP_BASE, BENEFITS: [] };
   const $ = sel => document.querySelector(sel);
 
   // ── State ────────────────────────────────────────────────────────────────
@@ -192,7 +193,7 @@
     if (r.name === 'feed') view.innerHTML = feedHTML();
     else if (r.name === 'article') { view.innerHTML = articleHTML(r.id); hydrateArticle(r.id); }
     else if (r.name === 'saved') view.innerHTML = savedHTML();
-    else view.innerHTML = aboutHTML();
+    else { view.innerHTML = accountHTML(); wireAccount(); }
     updateNav(r.name);
     if (r.name === 'feed') wireFeed();
   }
@@ -215,6 +216,7 @@
         <div class="card-meta">
           ${sec ? `<span class="badge">${esc(sec)}</span>` : ''}
           ${a.demo ? `<span class="badge demo">SAMPLE</span>` : ''}
+          ${a.protected && !a.demo ? `<span class="badge member">${esc(MEM.BADGE)}</span>` : ''}
           <span class="when">${esc(timeAgo(a.date))}</span>
         </div>
         <h2>${esc(a.title)}</h2>
@@ -314,14 +316,9 @@
     if (!a) return `<div class="article-shell"><div class="feed">${skeletonHTML(1)}</div></div>`;
     const saved = isSaved(a.id);
     const sec = sectionLabelFor(a);
-    const body = a.protected
-      ? `<div class="paywall">
-           <p>${a.excerpt ? esc(a.excerpt) : 'This article is available on the website.'}</p>
-           <p class="paywall-note">The full article is for members — read it on the site with your membership.</p>
-           <a class="btn primary" href="${esc(a.link)}" target="_blank" rel="noopener">Read on ${esc(CFG.SITE_NAME)} ↗</a>
-         </div>`
-      : `<div class="article-body">${a.content}</div>
-         <a class="btn subtle openlink" href="${esc(a.link)}" target="_blank" rel="noopener">Open on ${esc(CFG.SITE_NAME)} ↗</a>`;
+    const body = a.protected ? paywallHTML(a) :
+      `<div class="article-body">${a.content}</div>
+       <a class="btn subtle openlink" href="${esc(a.link)}" target="_blank" rel="noopener">Open on ${esc(CFG.SITE_NAME)} ↗</a>`;
     return `
     <article class="article-shell">
       <div class="article-actions">
@@ -341,6 +338,43 @@
       ${a.image ? `<img class="article-hero" src="${esc(a.image)}" alt="">` : ''}
       ${body}
     </article>`;
+  }
+
+  function paywallHTML(a) {
+    const signedIn = WPAuth.isSignedIn();
+    return `
+    <div class="paywall">
+      <div class="paywall-badge"><span class="badge member">${esc(MEM.BADGE)}</span></div>
+      <h3 class="paywall-title">This one’s for ${esc(MEM.NAME)}s</h3>
+      ${a.excerpt ? `<p class="paywall-excerpt">${esc(a.excerpt)}</p>` : ''}
+      ${signedIn
+        ? `<p class="paywall-note">You’re signed in, but this article didn’t unlock in-app —
+             it may be a higher tier, or the site may not unlock articles for apps yet.
+             Your membership always works on the site itself.</p>
+           <a class="btn primary" href="${esc(a.link)}" target="_blank" rel="noopener">Read on ${esc(CFG.SITE_NAME)} ↗</a>`
+        : `<ul class="member-benefits">${(MEM.BENEFITS || []).map(b => `<li>${esc(b)}</li>`).join('')}</ul>
+           <a class="btn primary" href="${esc(MEM.SIGNUP_URL)}" target="_blank" rel="noopener">Become a ${esc(MEM.NAME)} ↗</a>
+           <div class="paywall-alt">
+             ${WPAuth.enabled() ? `<a class="linklike" href="#/about">Already a ${esc(MEM.NAME)}? Sign in</a> · ` : ''}
+             <a class="linklike" href="${esc(a.link)}" target="_blank" rel="noopener">Read on the site ↗</a>
+           </div>`}
+    </div>`;
+  }
+
+  // A locked copy can be sitting in memory from before sign-in — refetch it
+  // once with the member token so it unlocks without a manual refresh.
+  const refetched = new Set();
+  async function refreshLockedIfMember(a) {
+    if (!a || !a.protected || a.demo || !WPAuth.isSignedIn()) return;
+    if (!/^\d+$/.test(String(a.id)) || refetched.has(String(a.id))) return;
+    refetched.add(String(a.id));
+    try {
+      const fresh = await WPApi.fetchPost(a.id);
+      if (!fresh.protected) {
+        state.byId.set(String(fresh.id), fresh);
+        if (currentRoute().name === 'article') render();
+      }
+    } catch (e) { /* stays locked — the paywall card is already correct */ }
   }
 
   async function hydrateArticle(id) {
@@ -372,6 +406,7 @@
         else { await navigator.clipboard.writeText(a.link); toast('Link copied'); }
       } catch (e) { /* user canceled share sheet */ }
     });
+    refreshLockedIfMember(a);
   }
 
   // — Saved —
@@ -383,13 +418,45 @@
       <div class="feed">${list.length ? list.map(cardHTML).join('') : '<div class="empty">Nothing saved yet. Tap ☆ Save on any article.</div>'}</div>`;
   }
 
-  // — About —
-  function aboutHTML() {
+  // — Account (membership + about) —
+  function membershipCardHTML() {
+    if (WPAuth.isSignedIn()) {
+      return `
+      <div class="about-card member-card">
+        <div class="card-meta"><span class="badge member">${esc(MEM.BADGE)}</span></div>
+        <h3>Signed in as ${esc(WPAuth.displayName() || 'member')}</h3>
+        <p>${esc(MEM.NAME)} articles unlock right in the app.</p>
+        <button class="btn subtle" id="signOutBtn">Sign out</button>
+      </div>`;
+    }
+    return `
+    <div class="about-card member-card">
+      <div class="card-meta"><span class="badge member">${esc(MEM.BADGE)}</span></div>
+      <h3>Become a ${esc(MEM.NAME)}</h3>
+      <ul class="member-benefits">${(MEM.BENEFITS || []).map(b => `<li>${esc(b)}</li>`).join('')}</ul>
+      <a class="btn primary" href="${esc(MEM.SIGNUP_URL)}" target="_blank" rel="noopener">Join at ${esc(CFG.WP_BASE.replace(/^https?:\/\//, ''))} ↗</a>
+      ${WPAuth.enabled() ? `
+      <form id="signInForm" class="signin" autocomplete="on">
+        <h4>Already a ${esc(MEM.NAME)}? Sign in</h4>
+        <input id="siUser" type="text" inputmode="email" autocomplete="username"
+               placeholder="Username or email" aria-label="Username or email" required>
+        <input id="siPass" type="password" autocomplete="current-password"
+               placeholder="Password" aria-label="Password" required>
+        <div class="signin-error" id="siError" role="alert"></div>
+        <button class="btn" type="submit" id="siSubmit">Sign in</button>
+        <p class="signin-note">Uses your ${esc(CFG.WP_BASE.replace(/^https?:\/\//, ''))} login. Your password
+        goes only to the site — the app keeps a sign-in token on this device.</p>
+      </form>` : ''}
+    </div>`;
+  }
+
+  function accountHTML() {
     const iosNotInstalled = /iphone|ipad|ipod/i.test(navigator.userAgent) &&
       !window.matchMedia('(display-mode: standalone)').matches && !navigator.standalone;
     return `
       <h1 class="page-title">${esc(CFG.SITE_NAME)}</h1>
       <p class="page-sub">${esc(CFG.SITE_TAGLINE)}</p>
+      ${membershipCardHTML()}
       <div class="about-card">
         <p>This app brings the news and articles from ${esc(CFG.SITE_NAME)} to your home screen —
         fast, readable, and available offline. All reporting lives on
@@ -408,7 +475,47 @@
           ${(CFG.LINKS || []).map(l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a></li>`).join('')}
         </ul>
       </div>
-      <div class="about-foot">Reader app v1.0${WPApi.devApiBase() ? ' · dev API: ' + esc(WPApi.devApiBase()) : ''}</div>`;
+      <div class="about-foot">Reader app v1.1${WPApi.devApiBase() ? ' · dev API: ' + esc(WPApi.devApiBase()) : ''}</div>`;
+  }
+
+  // Cached content is auth-specific — wipe it on any sign-in/out so the feed
+  // and article views refetch under the new identity.
+  async function clearContentCaches() {
+    try { localStorage.removeItem(FEED_CACHE_KEY); } catch (e) { /* fine */ }
+    state.byId.clear();
+    refetched.clear();
+    if (typeof caches !== 'undefined') {
+      try { await caches.delete('dnvr-api-v1'); } catch (e) { /* fine */ }
+    }
+  }
+
+  function wireAccount() {
+    const out = $('#signOutBtn');
+    if (out) out.addEventListener('click', async () => {
+      WPAuth.signOut();
+      await clearContentCaches();
+      state.articles = [];
+      toast('Signed out');
+      render();
+      loadFeed();
+    });
+    const form = $('#signInForm');
+    if (form) form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const btn = $('#siSubmit'), errEl = $('#siError');
+      btn.disabled = true; btn.textContent = 'Signing in…'; errEl.textContent = '';
+      try {
+        const name = await WPAuth.login($('#siUser').value.trim(), $('#siPass').value);
+        await clearContentCaches();
+        state.articles = [];
+        toast('Welcome back, ' + name);
+        render();
+        loadFeed();
+      } catch (err) {
+        errEl.textContent = err.message || 'Sign-in failed.';
+        btn.disabled = false; btn.textContent = 'Sign in';
+      }
+    });
   }
 
   // — Bottom nav —
@@ -466,6 +573,7 @@
     document.title = CFG.SITE_NAME + ' — News';
     wireChrome();
     updateNavBadge();
+    WPAuth.onSessionExpired = () => toast('Signed out — your session expired');
 
     // Instant paint from cache, then refresh from network.
     const cached = readFeedCache();

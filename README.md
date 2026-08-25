@@ -7,8 +7,6 @@ admin work and **zero backend work**.
 > **[SETUP_FOR_DNVR.md](SETUP_FOR_DNVR.md) is the half-day launch guide.**
 > This file is the technical overview.
 
-_[Placeholder for a personal note from the sender — replace or delete before sharing.]_
-
 ## What it is
 
 - **Feeds off the existing website.** The app reads the WordPress REST API that
@@ -22,8 +20,16 @@ _[Placeholder for a personal note from the sender — replace or delete before s
   (Broncos / Nuggets / Avalanche / Rockies / Buffs / Rams), search, offline
   reading, a saved-articles list, share sheet, dark & light themes, skeleton
   loaders, and instant boot from cache.
-- **Respects the membership.** Articles the public API marks protected render as
-  excerpt + a "Read on DNVR" button. The app never works around access controls.
+- **Diehard-aware.** Members-only articles are a first-class feature, not an
+  error state: they carry a DIEHARD badge in the feed, and opening one shows a
+  branded card with the membership's benefits, a **Become a Diehard** button
+  (→ thednvr.com/join), and a link to read on the site. The full in-app member
+  **sign-in is scaffolded and tested**: flip `MEMBERSHIP.AUTH.mode` to `'jwt'`
+  (after a one-time WordPress plugin install, see the setup guide) and members
+  sign in with their site login — locked articles then open right in the app,
+  badges clear, and sign-out re-locks everything and wipes cached member
+  content. The app never works around access controls; it renders exactly what
+  the site's API returns for the current reader.
 
 ## Tech
 
@@ -52,11 +58,13 @@ dnvr-app/
 
 ```bash
 node dev/mock-wp-server.js
-# open http://127.0.0.1:8788/?api=http://127.0.0.1:8788
+# open http://127.0.0.1:8788/?api=http://127.0.0.1:8788&auth=jwt
 ```
 
-The mock serves fixture articles in the exact WordPress API shape. `?api=clear`
-switches back to the live site configured in `js/config.js`.
+The mock serves fixture articles in the exact WordPress API shape, including a
+members-only article and a mock sign-in (username `diehard`, password `sample`)
+so the whole Diehard flow is demoable offline. `?api=clear` / `?auth=clear`
+switch back to the live config in `js/config.js`.
 
 Automated checks (needs `playwright-core` + Chromium):
 
@@ -65,8 +73,10 @@ node dev/smoke.js
 ```
 
 Verifies: live feed rendering, section tabs, infinite scroll, search, article
-sanitization (script/handler stripping), the members-only paywall path, saving
-for offline, and the labeled sample-content fallback — 16 checks.
+sanitization (script/handler stripping), saving for offline, the labeled
+sample-content fallback, and the full membership arc — DIEHARD feed badges,
+the Become-a-Diehard card on locked articles, rejected bad credentials,
+sign-in unlocking members-only articles in-app, and sign-out re-locking them.
 
 ## Design notes
 

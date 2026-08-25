@@ -2,18 +2,21 @@
    DNVR News — styles.
    THEME TOKENS: everything brand-colored reads from this block.
    To re-brand, change these values (and the icons/) — nothing else.
-   The gold accent is a PLACEHOLDER for DNVR's official brand color.
+   Palette matches DNVR's public black + yellow-gold look; replace
+   --accent with the exact value from the official style guide
+   (brand kit / brandfetch.com/thednvr.com) if it differs.
    ============================================================ */
 :root {
-  --accent:        #f5a623;   /* placeholder "Mile High gold" — swap for brand */
-  --accent-ink:    #1a1206;   /* text color used ON the accent */
+  --accent:        #ffc629;   /* DNVR yellow-gold */
+  --accent-ink:    #141310;   /* text color used ON the accent */
+  --accent-text:   #ffc629;   /* accent used AS text (dark theme: same) */
 
-  --bg:            #0e0f12;
-  --bg-elev:       #17181d;
-  --bg-elev2:      #1f2129;
-  --ink:           #f2f3f5;
-  --ink-dim:       #a7abb5;
-  --line:          #2a2d36;
+  --bg:            #0c0c0d;
+  --bg-elev:       #161618;
+  --bg-elev2:      #1e1e21;
+  --ink:           #f4f4f2;
+  --ink-dim:       #a6a6a0;
+  --line:          #2a2a2e;
   --danger:        #e5484d;
 
   --radius: 14px;
@@ -25,12 +28,14 @@
 
 @media (prefers-color-scheme: light) {
   :root {
-    --bg:       #f6f6f4;
-    --bg-elev:  #ffffff;
-    --bg-elev2: #f0f0ee;
-    --ink:      #16181d;
-    --ink-dim:  #5b606b;
-    --line:     #e3e3df;
+    --bg:          #f7f7f4;
+    --bg-elev:     #ffffff;
+    --bg-elev2:    #f0f0ec;
+    --ink:         #17170f;
+    --ink-dim:     #5d5d55;
+    --line:        #e4e4dc;
+    /* Bright yellow fails as text on white — darken it there only. */
+    --accent-text: #8a6a00;
   }
 }
 
@@ -46,7 +51,7 @@ body {
   padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
 }
 img { max-width: 100%; }
-a { color: var(--accent); }
+a { color: var(--accent-text); }
 button { font: inherit; }
 
 /* ── Top app bar ─────────────────────────────────────────── */
@@ -109,10 +114,11 @@ button { font: inherit; }
 .card-meta { display: flex; align-items: center; gap: 8px; }
 .badge {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent); border-radius: 6px; padding: 1px 8px;
+  color: var(--accent-text); border-radius: 6px; padding: 1px 8px;
   font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
 }
 .badge.demo { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.badge.member { background: var(--accent); color: var(--accent-ink); }
 .when { color: var(--ink-dim); font-size: 0.8rem; }
 .excerpt {
   margin: 2px 0 0; color: var(--ink-dim); font-size: 0.92rem;
@@ -133,7 +139,7 @@ button { font: inherit; }
   color: var(--ink-dim); font-size: 0.92rem;
 }
 .notice.warn { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); color: var(--ink); }
-.linklike { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; font-weight: 700; }
+.linklike { background: none; border: 0; color: var(--accent-text); cursor: pointer; padding: 0; font-weight: 700; }
 
 /* ── Buttons ─────────────────────────────────────────────── */
 .btn {
@@ -168,10 +174,43 @@ button { font: inherit; }
 .openlink { display: block; margin: 20px auto 0; max-width: 320px; }
 
 .paywall {
-  border: 1px solid var(--line); border-radius: var(--radius);
-  background: var(--bg-elev); padding: 18px; text-align: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: var(--radius);
+  background: var(--bg-elev); padding: 20px 18px; text-align: center;
 }
+.paywall-badge { margin-bottom: 8px; }
+.paywall-title { margin: 0 0 8px; font-size: 1.2rem; }
+.paywall-excerpt { color: var(--ink-dim); margin: 0 0 12px; }
 .paywall-note { color: var(--ink-dim); font-size: 0.92rem; }
+.paywall-alt { margin-top: 12px; color: var(--ink-dim); font-size: 0.92rem; }
+.paywall .btn.primary { margin-top: 4px; }
+
+.member-benefits {
+  list-style: none; margin: 0 auto 14px; padding: 0;
+  max-width: 420px; text-align: left;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.member-benefits li { padding-left: 22px; position: relative; }
+.member-benefits li::before {
+  content: '✓'; position: absolute; left: 0;
+  color: var(--accent-text); font-weight: 800;
+}
+
+.member-card { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.member-card .card-meta { margin-bottom: 8px; }
+.member-card .btn { margin-top: 4px; }
+
+.signin { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+.signin h4 { margin: 0 0 10px; }
+.signin input {
+  display: block; width: 100%; margin-bottom: 8px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--ink);
+  padding: 10px 12px; font: inherit; outline: none;
+}
+.signin input:focus { border-color: var(--accent); }
+.signin-error { color: var(--danger); font-size: 0.9rem; min-height: 1.2em; margin-bottom: 6px; }
+.signin-note { color: var(--ink-dim); font-size: 0.8rem; margin: 10px 0 0; }
 
 /* ── Saved / About ───────────────────────────────────────── */
 .page-title { font-size: 1.5rem; margin: 14px 0 2px; }
@@ -203,7 +242,7 @@ button { font: inherit; }
   font-size: 0.7rem; font-weight: 700; letter-spacing: 0.03em; position: relative;
 }
 .nav-btn .glyph { font-size: 1.15rem; line-height: 1; }
-.nav-btn.active { color: var(--accent); }
+.nav-btn.active { color: var(--accent-text); }
 #savedCount {
   position: absolute; top: 6px; right: calc(50% - 22px);
   background: var(--accent); color: var(--accent-ink); border-radius: 999px;
