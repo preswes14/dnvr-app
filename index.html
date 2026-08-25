@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DNVR — News</title>
+  <meta name="description" content="News and articles from DNVR — Denver sports, all in one place.">
+  <meta name="theme-color" content="#0e0f12">
+
+  <!-- PWA / iOS install -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="DNVR">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body data-route="feed">
+
+  <header class="appbar">
+    <div class="appbar-inner">
+      <button class="brand" id="brandBtn" aria-label="Home">
+        <span class="dot" aria-hidden="true"></span><span id="brandName">DNVR</span>
+      </button>
+      <form id="searchForm" role="search">
+        <input id="searchInput" type="search" placeholder="Search articles" aria-label="Search articles" autocomplete="off">
+      </form>
+    </div>
+  </header>
+
+  <main id="view" aria-live="polite"></main>
+
+  <nav class="bottomnav" aria-label="Main">
+    <div class="bottomnav-inner">
+      <button class="nav-btn active" data-route="feed">
+        <span class="glyph" aria-hidden="true">≡</span>News
+      </button>
+      <button class="nav-btn" data-route="saved">
+        <span class="glyph" aria-hidden="true">★</span>Saved
+        <span id="savedCount" style="display:none"></span>
+      </button>
+      <button class="nav-btn" data-route="about">
+        <span class="glyph" aria-hidden="true">ⓘ</span>About
+      </button>
+    </div>
+  </nav>
+
+  <div id="toast" role="status"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/demo-data.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

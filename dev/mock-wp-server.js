@@ -1,0 +1,140 @@
+/*
+ * Local dev harness: serves the app AND a mock of the WordPress REST API
+ * with the exact response shape of /wp-json/wp/v2/* — so the app can be
+ * developed and demoed with zero dependence on the live site.
+ *
+ *   node dev/mock-wp-server.js          # http://127.0.0.1:8788
+ *
+ * Then open:  http://127.0.0.1:8788/?api=http://127.0.0.1:8788
+ * (the ?api= override persists; use ?api=clear to go back to the live site)
+ *
+ * All fixture content below is clearly-labeled sample data.
+ */
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const PORT = process.env.PORT || 8788;
+const ROOT = path.join(__dirname, '..');
+
+// ── Fixtures ───────────────────────────────────────────────────────────────
+const CATEGORIES = [
+  { id: 2, name: 'Broncos', slug: 'broncos', parent: 0, count: 40 },
+  { id: 3, name: 'Nuggets', slug: 'nuggets', parent: 0, count: 35 },
+  { id: 4, name: 'Avalanche', slug: 'avalanche', parent: 0, count: 30 },
+  { id: 5, name: 'Rockies', slug: 'rockies', parent: 0, count: 22 },
+  { id: 6, name: 'Buffs', slug: 'buffs', parent: 0, count: 12 },
+  { id: 7, name: 'CSU Rams', slug: 'csu-rams', parent: 0, count: 8 },
+  { id: 9, name: 'Uncategorized', slug: 'uncategorized', parent: 0, count: 3 }
+];
+
+const TEAM_COLORS = { 2: '#fb4f14', 3: '#fec524', 4: '#6f263d', 5: '#33006f', 6: '#cfb87c', 7: '#1e4d2b' };
+
+const LOREM = [
+  'This is sample fixture copy used by the local development server. It stands in for a real paragraph of reporting so layout, typography, and reading rhythm can be judged honestly.',
+  'A second paragraph keeps the article long enough to scroll. Line length, paragraph spacing, and link styling all show up here rather than in a real story.',
+  'Numbers, quotes, and names would normally appear throughout — the fixture keeps things generic on purpose so nobody mistakes it for actual coverage.'
+];
+
+function makePost(i) {
+  const cat = CATEGORIES[i % 6]; // rotate through the six team categories
+  const id = 100 + i;
+  const isProtected = i === 4;   // one members-only article to exercise the paywall UI
+  const date = new Date(Date.UTC(2026, 7, 24, 12, 0, 0) - i * 5 * 3600 * 1000).toISOString().replace(/\.\d+Z$/, '');
+  const title = `Sample ${cat.name} article #${i + 1}: fixture headline for layout testing`;
+  const content = isProtected ? '' : `
+    <p>${LOREM[0]}</p>
+    <p>${LOREM[1]} It also includes <a href="https://example.com/sample">a sample link</a> to check link styling.</p>
+    <blockquote><p>“A sample pull quote, to verify blockquote treatment.” — Sample source</p></blockquote>
+    <script>window.__XSS_FIXTURE_RAN__ = true;</script>
+    <p onclick="window.__XSS_FIXTURE_RAN__=true">${LOREM[2]}</p>
+    <img src="/mockimg/${id}.svg" alt="sample inline image">`;
+  return {
+    id,
+    date, date_gmt: date,
+    link: `https://thednvr.com/sample-${id}/`,
+    title: { rendered: title },
+    excerpt: { rendered: `<p>${LOREM[0].slice(0, 140)}&hellip;</p>`, protected: isProtected },
+    content: { rendered: content, protected: isProtected },
+    categories: [cat.id],
+    _embedded: {
+      author: [{ name: 'Sample Staff Writer' }],
+      'wp:featuredmedia': [{
+        source_url: `/mockimg/${id}.svg`,
+        media_details: { sizes: { medium_large: { source_url: `/mockimg/${id}.svg` } } }
+      }]
+    }
+  };
+}
+const POSTS = Array.from({ length: 24 }, (_, i) => makePost(i));
+
+// ── Server ─────────────────────────────────────────────────────────────────
+const MIME = {
+  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+  '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json',
+  '.json': 'application/json'
+};
+
+function send(res, status, body, headers) {
+  res.writeHead(status, Object.assign({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'X-WP-Total, X-WP-TotalPages'
+  }, headers));
+  res.end(body);
+}
+
+http.createServer((req, res) => {
+  const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
+  const p = url.pathname;
+
+  if (p === '/wp-json/wp/v2/categories') {
+    return send(res, 200, JSON.stringify(CATEGORIES), { 'Content-Type': 'application/json' });
+  }
+
+  const single = p.match(/^\/wp-json\/wp\/v2\/posts\/(\d+)$/);
+  if (single) {
+    const post = POSTS.find(x => x.id === +single[1]);
+    return post
+      ? send(res, 200, JSON.stringify(post), { 'Content-Type': 'application/json' })
+      : send(res, 404, JSON.stringify({ code: 'rest_post_invalid_id' }), { 'Content-Type': 'application/json' });
+  }
+
+  if (p === '/wp-json/wp/v2/posts') {
+    let list = POSTS;
+    const cats = url.searchParams.get('categories');
+    if (cats) {
+      const ids = cats.split(',').map(Number);
+      list = list.filter(x => x.categories.some(c => ids.includes(c)));
+    }
+    const search = (url.searchParams.get('search') || '').toLowerCase();
+    if (search) list = list.filter(x => x.title.rendered.toLowerCase().includes(search));
+    const perPage = +(url.searchParams.get('per_page') || 10);
+    const page = +(url.searchParams.get('page') || 1);
+    const totalPages = Math.max(1, Math.ceil(list.length / perPage));
+    const slice = list.slice((page - 1) * perPage, page * perPage);
+    return send(res, 200, JSON.stringify(slice), {
+      'Content-Type': 'application/json',
+      'X-WP-Total': String(list.length),
+      'X-WP-TotalPages': String(totalPages)
+    });
+  }
+
+  const img = p.match(/^\/mockimg\/(\d+)\.svg$/);
+  if (img) {
+    const post = POSTS.find(x => x.id === +img[1]);
+    const color = (post && TEAM_COLORS[post.categories[0]]) || '#555';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360">
+      <rect width="640" height="360" fill="${color}"/>
+      <rect width="640" height="360" fill="rgba(0,0,0,0.35)"/>
+      <text x="320" y="190" text-anchor="middle" font-family="Arial" font-size="34" fill="#fff">SAMPLE IMAGE</text></svg>`;
+    return send(res, 200, svg, { 'Content-Type': 'image/svg+xml' });
+  }
+
+  // Static app files
+  let file = p === '/' ? '/index.html' : p;
+  const full = path.normalize(path.join(ROOT, file));
+  if (!full.startsWith(ROOT) || !fs.existsSync(full) || fs.statSync(full).isDirectory()) {
+    return send(res, 404, 'not found', { 'Content-Type': 'text/plain' });
+  }
+  send(res, 200, fs.readFileSync(full), { 'Content-Type': MIME[path.extname(full)] || 'application/octet-stream' });
+}).listen(PORT, () => console.log(`mock WP + app on http://127.0.0.1:${PORT}  (open /?api=http://127.0.0.1:${PORT})`));
