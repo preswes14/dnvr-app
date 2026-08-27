@@ -61,7 +61,11 @@ function check(name, ok, detail) {
     check('section chips resolved from API',
       await page.locator('.chip', { hasText: 'Broncos' }).count() === 1 &&
       await page.locator('.chip', { hasText: 'CSU Rams' }).count() === 1);
-    check('slug-variant dedupe (one CU Buffs chip)',
+    check('fuzzy match finds prefixed team slugs (Nuggets/Avalanche/Rapids)',
+      await page.locator('.chip', { hasText: 'Nuggets' }).count() === 1 &&
+      await page.locator('.chip', { hasText: 'Avalanche' }).count() === 1 &&
+      await page.locator('.chip', { hasText: 'Rapids' }).count() === 1);
+    check('exactly one CU Buffs chip',
       await page.locator('.chip', { hasText: 'CU Buffs' }).count() === 1);
     await page.screenshot({ path: path.join(SHOTS, 'feed-mobile.png') });
 
@@ -173,6 +177,43 @@ function check(name, ok, detail) {
     await page2.waitForSelector('.badge.demo', { timeout: 10000 });
     check('unreachable API falls back to labeled sample content', true);
     await page2.close();
+
+    // ── Cookie mode: a website login carries into the app automatically ──
+    // (auth=auto also proves the same-origin auto-resolution to cookie mode)
+    const ctx3 = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await ctx3.addCookies([{ name: 'dnvr_mock_login', value: '1', url: BASE }]);
+    const page3 = await ctx3.newPage();
+    page3.on('pageerror', e => errors.push('pageerror(cookie): ' + e.message));
+    await page3.goto(`${BASE}/?api=${BASE}&auth=auto`);
+    await page3.waitForSelector('.card[data-id]', { timeout: 8000 });
+    check('site login recognized at boot — member feed, no DIEHARD badges',
+      (await page3.locator('.card .badge.member').count()) === 0);
+    await page3.goto(`${BASE}/#/about`);
+    await page3.waitForSelector('.member-card', { timeout: 8000 });
+    await page3.waitForFunction(() =>
+      document.querySelector('.member-card h3') &&
+      document.querySelector('.member-card h3').textContent.includes('Sample Diehard'),
+      null, { timeout: 8000 });
+    check('account shows website identity with NO in-app sign-in form',
+      (await page3.locator('#signInForm').count()) === 0 &&
+      (await page3.locator('#signOutBtn').count()) === 0);
+    await page3.goto(`${BASE}/#/article/104`);
+    await page3.waitForSelector('.article-body', { timeout: 8000 });
+    check('members-only article unlocks via website login',
+      (await page3.locator('.paywall').count()) === 0);
+    await ctx3.close();
+
+    // Cookie mode without a website login → points at the site's login.
+    const ctx4 = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page4 = await ctx4.newPage();
+    page4.on('pageerror', e => errors.push('pageerror(cookie-anon): ' + e.message));
+    await page4.goto(`${BASE}/?api=${BASE}&auth=cookie`);
+    await page4.goto(`${BASE}/#/about`);
+    await page4.waitForSelector('.member-card', { timeout: 8000 });
+    check('logged-out cookie mode offers site login, not an app form',
+      (await page4.locator('#probeBtn').count()) === 1 &&
+      (await page4.locator('#signInForm').count()) === 0);
+    await ctx4.close();
 
     check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   } catch (e) {

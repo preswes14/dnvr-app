@@ -18,13 +18,17 @@ const PORT = process.env.PORT || 8788;
 const ROOT = path.join(__dirname, '..');
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
+// Slugs deliberately do NOT all equal the app config's keywords — the live
+// site prefixes team names ("denver-nuggets"), which is exactly what broke
+// the first deploy's tabs. The fuzzy matcher must resolve all of these.
 const CATEGORIES = [
   { id: 2, name: 'Broncos', slug: 'broncos', parent: 0, count: 40 },
-  { id: 3, name: 'Nuggets', slug: 'nuggets', parent: 0, count: 35 },
-  { id: 4, name: 'Avalanche', slug: 'avalanche', parent: 0, count: 30 },
+  { id: 3, name: 'Denver Nuggets', slug: 'denver-nuggets', parent: 0, count: 35 },
+  { id: 4, name: 'Colorado Avalanche', slug: 'colorado-avalanche', parent: 0, count: 30 },
   { id: 5, name: 'Rockies', slug: 'rockies', parent: 0, count: 22 },
-  { id: 6, name: 'Buffs', slug: 'buffs', parent: 0, count: 12 },
+  { id: 6, name: 'CU Buffs', slug: 'cu-buffs', parent: 0, count: 12 },
   { id: 7, name: 'CSU Rams', slug: 'csu-rams', parent: 0, count: 8 },
+  { id: 8, name: 'Colorado Rapids', slug: 'colorado-rapids', parent: 0, count: 5 },
   { id: 9, name: 'Uncategorized', slug: 'uncategorized', parent: 0, count: 3 }
 ];
 
@@ -74,9 +78,18 @@ const POSTS = Array.from({ length: 24 }, (_, i) => makePost(i));
 // to a signed-in member.
 const MOCK_USER = { username: 'diehard', password: 'sample', name: 'Sample Diehard' };
 const MOCK_TOKEN = 'mock-jwt-token-fixture';
+// Cookie mode: a browser "logged in on the website" is simulated by the
+// cookie dnvr_mock_login=1; the nonce bridge then behaves like
+// wordpress-snippet.php does on a real site.
+const MOCK_NONCE = 'mock-rest-nonce-fixture';
+
+function hasSiteLogin(req) {
+  return /(?:^|;\s*)dnvr_mock_login=1(?:;|$)/.test(req.headers.cookie || '');
+}
 
 function isAuthorized(req) {
-  return (req.headers.authorization || '') === 'Bearer ' + MOCK_TOKEN;
+  if ((req.headers.authorization || '') === 'Bearer ' + MOCK_TOKEN) return true;
+  return hasSiteLogin(req) && req.headers['x-wp-nonce'] === MOCK_NONCE;
 }
 
 function viewOf(post, authed) {
@@ -121,8 +134,16 @@ http.createServer((req, res) => {
   if (req.method === 'OPTIONS') {
     return send(res, 204, '', {
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-WP-Nonce'
     });
+  }
+
+  // The membership bridge from wordpress-snippet.php.
+  if (p === '/wp-admin/admin-ajax.php' && url.searchParams.get('action') === 'dnvr_app_nonce') {
+    const body = hasSiteLogin(req)
+      ? { ok: true, nonce: MOCK_NONCE, name: MOCK_USER.name }
+      : { ok: false };
+    return send(res, 200, JSON.stringify(body), { 'Content-Type': 'application/json' });
   }
 
   if (p === '/wp-json/jwt-auth/v1/token' && req.method === 'POST') {

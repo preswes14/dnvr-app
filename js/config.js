@@ -23,18 +23,22 @@ window.DNVR_CONFIG = {
   API_BASE: null,
 
   // ── Sections (feed tabs) ────────────────────────────────────────────────
-  // Matched against the WordPress category SLUGS at runtime — no hardcoded
-  // category IDs. A section whose slug doesn't exist on the site is simply
-  // not shown, so this list is safe to over-specify. Order = tab order.
+  // Matched against the live WordPress categories at runtime — no hardcoded
+  // category IDs. Matching is fuzzy: a section matches a category whose slug
+  // or name contains the keyword (so 'nuggets' finds "Denver Nuggets" /
+  // "denver-nuggets" / "nuggets-news" alike); `alt` lists extra spellings.
+  // A section with no matching category is simply not shown, so this list is
+  // safe to over-specify. Order = tab order. Safety net: if fewer than three
+  // sections match, the app fills tabs from the site's biggest categories so
+  // the feed always has real navigation.
   SECTIONS: [
     { slug: 'broncos',   label: 'Broncos'   },
     { slug: 'nuggets',   label: 'Nuggets'   },
-    { slug: 'avalanche', label: 'Avalanche' },
+    { slug: 'avalanche', label: 'Avalanche', alt: ['avs'] },
     { slug: 'rockies',   label: 'Rockies'   },
-    { slug: 'buffs',     label: 'CU Buffs'  },
-    { slug: 'cu-buffs',  label: 'CU Buffs'  },
-    { slug: 'rams',      label: 'CSU Rams'  },
-    { slug: 'csu-rams',  label: 'CSU Rams'  }
+    { slug: 'rapids',    label: 'Rapids'    },
+    { slug: 'buffs',     label: 'CU Buffs',  alt: ['buffaloes', 'cu'] },
+    { slug: 'rams',      label: 'CSU Rams',  alt: ['csu'] }
   ],
 
   // Category slugs to hide from the feed even under "All" (e.g. podcast
@@ -55,18 +59,29 @@ window.DNVR_CONFIG = {
       '20% off merch and events · 15% off at the DNVR Bar',
       'A free shirt at sign-up, and every year after'
     ],
+    // Where readers log in on the website (used by locked-article cards in
+    // cookie mode). wp-login.php always exists; swap for a themed login page.
+    LOGIN_URL: 'https://thednvr.com/wp-login.php',
     AUTH: {
-      // 'link' (default): locked articles send members to the website —
-      //   works today with zero site changes.
-      // 'jwt': members sign in INSIDE the app with their site login and
-      //   locked articles open in-app. Requires a one-time WordPress
-      //   plugin install — read "Letting Diehards sign in inside the app"
-      //   in SETUP_FOR_DNVR.md before switching this on. You can trial it
-      //   on the deployed app without editing this file via ?auth=jwt.
-      mode: 'link',
+      // 'auto' (default, recommended): when the app is hosted ON the
+      //   WordPress domain itself (e.g. thednvr.com/app/), readers who are
+      //   logged in on the website are recognized automatically — no in-app
+      //   login. Requires the tiny bridge in wordpress-snippet.php; without
+      //   it (or on any other host) 'auto' quietly behaves like 'link'.
+      // 'link': locked articles just send members to the website.
+      // 'jwt': members sign in INSIDE the app (username/password form).
+      //   For hosting off-domain or a future App Store wrapper; needs a
+      //   JWT auth plugin on WordPress. See SETUP_FOR_DNVR.md for all three.
+      // Trial any mode on a deployed app without editing this file:
+      //   append ?auth=cookie / ?auth=jwt / ?auth=link (?auth=clear resets).
+      mode: 'auto',
       // Token endpoint for 'jwt' mode. null = the standard
       // `<api root>/jwt-auth/v1/token` of the JWT Authentication plugin.
-      tokenEndpoint: null
+      tokenEndpoint: null,
+      // Nonce bridge for cookie mode. null = the site's
+      // `/wp-admin/admin-ajax.php?action=dnvr_app_nonce` (what
+      // wordpress-snippet.php registers).
+      nonceEndpoint: null
     }
   },
 

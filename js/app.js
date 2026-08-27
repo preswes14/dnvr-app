@@ -355,7 +355,8 @@
         : `<ul class="member-benefits">${(MEM.BENEFITS || []).map(b => `<li>${esc(b)}</li>`).join('')}</ul>
            <a class="btn primary" href="${esc(MEM.SIGNUP_URL)}" target="_blank" rel="noopener">Become a ${esc(MEM.NAME)} ↗</a>
            <div class="paywall-alt">
-             ${WPAuth.enabled() ? `<a class="linklike" href="#/about">Already a ${esc(MEM.NAME)}? Sign in</a> · ` : ''}
+             ${WPAuth.canFormSignIn() ? `<a class="linklike" href="#/about">Already a ${esc(MEM.NAME)}? Sign in</a> · ` : ''}
+             ${WPAuth.mode() === 'cookie' ? `<a class="linklike" href="${esc(MEM.LOGIN_URL || CFG.WP_BASE + '/wp-login.php')}" target="_blank" rel="noopener">Already a ${esc(MEM.NAME)}? Log in on the site</a> · ` : ''}
              <a class="linklike" href="${esc(a.link)}" target="_blank" rel="noopener">Read on the site ↗</a>
            </div>`}
     </div>`;
@@ -420,13 +421,18 @@
 
   // — Account (membership + about) —
   function membershipCardHTML() {
+    const site = CFG.WP_BASE.replace(/^https?:\/\//, '');
+    const loginUrl = MEM.LOGIN_URL || CFG.WP_BASE + '/wp-login.php';
     if (WPAuth.isSignedIn()) {
       return `
       <div class="about-card member-card">
         <div class="card-meta"><span class="badge member">${esc(MEM.BADGE)}</span></div>
         <h3>Signed in as ${esc(WPAuth.displayName() || 'member')}</h3>
         <p>${esc(MEM.NAME)} articles unlock right in the app.</p>
-        <button class="btn subtle" id="signOutBtn">Sign out</button>
+        ${WPAuth.canFormSignIn()
+          ? `<button class="btn subtle" id="signOutBtn">Sign out</button>`
+          : `<p class="signin-note">Recognized through your ${esc(site)} login —
+             logging out on the site signs this app out too.</p>`}
       </div>`;
     }
     return `
@@ -434,8 +440,16 @@
       <div class="card-meta"><span class="badge member">${esc(MEM.BADGE)}</span></div>
       <h3>Become a ${esc(MEM.NAME)}</h3>
       <ul class="member-benefits">${(MEM.BENEFITS || []).map(b => `<li>${esc(b)}</li>`).join('')}</ul>
-      <a class="btn primary" href="${esc(MEM.SIGNUP_URL)}" target="_blank" rel="noopener">Join at ${esc(CFG.WP_BASE.replace(/^https?:\/\//, ''))} ↗</a>
-      ${WPAuth.enabled() ? `
+      <a class="btn primary" href="${esc(MEM.SIGNUP_URL)}" target="_blank" rel="noopener">Join at ${esc(site)} ↗</a>
+      ${WPAuth.mode() === 'cookie' ? `
+      <div class="signin">
+        <h4>Already a ${esc(MEM.NAME)}?</h4>
+        <p class="signin-note">Log in on ${esc(site)} and the app recognizes you
+        automatically — no separate app login.</p>
+        <a class="btn" href="${esc(loginUrl)}" target="_blank" rel="noopener">Log in on ${esc(site)} ↗</a>
+        <p class="signin-note"><button class="linklike" id="probeBtn">Already logged in? Check again</button></p>
+      </div>` : ''}
+      ${WPAuth.canFormSignIn() ? `
       <form id="signInForm" class="signin" autocomplete="on">
         <h4>Already a ${esc(MEM.NAME)}? Sign in</h4>
         <input id="siUser" type="text" inputmode="email" autocomplete="username"
@@ -444,7 +458,7 @@
                placeholder="Password" aria-label="Password" required>
         <div class="signin-error" id="siError" role="alert"></div>
         <button class="btn" type="submit" id="siSubmit">Sign in</button>
-        <p class="signin-note">Uses your ${esc(CFG.WP_BASE.replace(/^https?:\/\//, ''))} login. Your password
+        <p class="signin-note">Uses your ${esc(site)} login. Your password
         goes only to the site — the app keeps a sign-in token on this device.</p>
       </form>` : ''}
     </div>`;
@@ -475,7 +489,7 @@
           ${(CFG.LINKS || []).map(l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a></li>`).join('')}
         </ul>
       </div>
-      <div class="about-foot">Reader app v1.1${WPApi.devApiBase() ? ' · dev API: ' + esc(WPApi.devApiBase()) : ''}</div>`;
+      <div class="about-foot">Reader app v1.2${WPApi.devApiBase() ? ' · dev API: ' + esc(WPApi.devApiBase()) : ''}</div>`;
   }
 
   // Cached content is auth-specific — wipe it on any sign-in/out so the feed
@@ -489,7 +503,29 @@
     }
   }
 
+  // Cookie mode: ask the site whether this browser's website login changed,
+  // and refresh the app's member state to match.
+  async function probeAndRefresh({ silent = false } = {}) {
+    const changed = await WPAuth.probeCookie();
+    if (!changed) return false;
+    await clearContentCaches();
+    state.articles = [];
+    if (!silent) {
+      toast(WPAuth.isSignedIn()
+        ? 'Welcome back, ' + (WPAuth.displayName() || 'member')
+        : 'Signed out on the site');
+    }
+    render();
+    loadFeed();
+    return true;
+  }
+
   function wireAccount() {
+    const probe = $('#probeBtn');
+    if (probe) probe.addEventListener('click', async () => {
+      const changed = await probeAndRefresh();
+      if (!changed) toast('Not logged in on the site yet');
+    });
     const out = $('#signOutBtn');
     if (out) out.addEventListener('click', async () => {
       WPAuth.signOut();
@@ -584,7 +620,24 @@
       state.articles.forEach(a => state.byId.set(String(a.id), a));
     }
     render();
-    loadFeed();
+    // Cookie mode: learn the reader's website login BEFORE the first fetch so
+    // the initial feed is already the member's view. Bounded so a slow bridge
+    // can't delay first content.
+    (async () => {
+      if (WPAuth.mode() === 'cookie') {
+        try {
+          await Promise.race([WPAuth.probeCookie(), new Promise(r => setTimeout(r, 1500))]);
+        } catch (e) { /* treated as signed-out */ }
+      }
+      loadFeed();
+    })();
+
+    // Coming back from logging in on the site (another tab) → recognize it.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && WPAuth.mode() === 'cookie') {
+        probeAndRefresh({ silent: false });
+      }
+    });
 
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       navigator.serviceWorker.register('sw.js').catch(() => { /* non-fatal */ });

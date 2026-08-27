@@ -23,18 +23,27 @@ category — you'll compare them against the app config in step 2.
 
 ## Step 1 — Host the folder (30–45 minutes)
 
-The app is static files. Any HTTPS static host works; two easy options:
+The app is static files; any HTTPS host works. Where you put it decides one
+big thing — see Step 4:
 
-**Cloudflare Pages (recommended, free)**
-1. Cloudflare dashboard → *Workers & Pages* → *Create* → *Pages* → *Upload assets*.
-2. Upload the contents of this folder (everything except `dev/`, which is
-   optional developer tooling).
-3. Optional but nice: add a custom domain like `app.thednvr.com`.
+**Option A — on thednvr.com itself (recommended): e.g. `thednvr.com/app/`.**
+Upload the folder next to WordPress via your host's file manager or SFTP.
+This is the option that lets Diehards' existing *website* logins carry into
+the app automatically (Step 4) — and it eliminates the CORS topic entirely.
+Most WordPress hosts happily serve a static folder alongside the site; if
+yours is a managed platform, the one-line question for their support is "can
+I serve a static folder at /app/?". (A *subdomain* like app.thednvr.com does
+NOT get the login carry-over — browsers scope the login cookie to the main
+host — so prefer a path on the main domain.)
 
-**Netlify (free)** — drag the folder onto https://app.netlify.com/drop. Done.
+**Option B — any static host (fine for launch, no login carry-over):**
+- Cloudflare Pages: dashboard → *Workers & Pages* → *Create* → *Pages* →
+  *Upload assets* → upload the folder (skip `dev/`, it's developer tooling).
+- Netlify: drag the folder onto https://app.netlify.com/drop.
 
-HTTPS is automatic on both, and HTTPS is required (the offline features won't
-activate without it).
+HTTPS is automatic on these and required (offline features won't activate
+without it). You can start on Option B today and move to Option A later —
+the app doesn't change, only its URL.
 
 ## Step 2 — Point the config at your site (10 minutes)
 
@@ -91,30 +100,48 @@ unrestricted — that's a site-wide setting worth tightening in the plugin
 regardless of this app. (If the body is withheld, the app's badge + card
 behavior is already correct.)
 
-**Stage 2 — optional: Diehards sign in inside the app.** The sign-in screen,
-token handling, unlock flow, and sign-out cleanup are already built and
-tested; they activate when your WordPress can issue login tokens:
+**Stage 2 — recommended: website logins carry into the app automatically.**
+If the app is hosted on your domain (Step 1, Option A), a Diehard who is
+logged in on thednvr.com opens the app and is simply *already* a member —
+locked articles open, badges clear, their name shows on the Account tab. No
+app login screen at all. Two-part setup, ~15 minutes:
 
-1. Install the free **"JWT Authentication for WP REST API"** plugin (or any
-   JWT auth plugin — the token endpoint is configurable) and add its secret
-   key to `wp-config.php` per the plugin's two-line instructions.
-2. **Trial it without touching config**: open the deployed app with
-   `?auth=jwt` appended and sign in with a test member account. Open a
-   members-only article — if it unlocks, you're done; `?auth=clear` ends the
-   trial. Whether the body actually unlocks for a signed-in subscriber
-   depends on your paywall plugin honoring authenticated REST reads — that's
-   the thing this trial tells you.
-3. If the trial works, make it permanent: `js/config.js` →
-   `MEMBERSHIP.AUTH.mode: 'jwt'`, re-upload.
+1. Host the app at a path on the main domain (e.g. `/app/` — Step 1A).
+2. Install the tiny bridge in **`wordpress-snippet.php`** (in this folder):
+   drop the file into `wp-content/mu-plugins/`, or paste its code into your
+   theme's `functions.php`. It's read-only — it tells the app whether the
+   current browser is logged in, and hands back WordPress's own standard
+   REST credentials (a "nonce") plus the display name. Nothing else.
 
-Security posture, for whoever reviews this: the app sends the password only
-to your own site's token endpoint (once, at sign-in), stores only the issued
-token on the reader's device, never edge-caches authenticated responses (the
-bundled Cloudflare Worker explicitly bypasses cache when an Authorization
-header is present), and wipes cached member content on sign-out. If your
-members sign in through a non-WordPress identity system instead, treat the
-built-in form as the scaffold to wire into it — everything downstream of
-"get a token" is done.
+That's the whole integration. The app's default `auto` mode detects
+same-domain hosting by itself — no config edit. The reader's login state,
+membership checks, and content access are all still decided by WordPress
+and your paywall plugin on every request; the app never stores a password
+and holds nothing but the short-lived nonce, in memory.
+
+One dependency to verify (same as Stage 1's check): your paywall plugin must
+serve the full body to a *logged-in member's* API request. Test by opening
+`/app/` in a browser where you're logged in as a test member and tapping a
+locked article.
+
+**Stage 3 — only if hosting off-domain, or for a future App Store build:**
+in-app sign-in. The form, token handling, and sign-out cleanup are built and
+tested; they activate with a JWT auth plugin:
+
+1. Install the free **"JWT Authentication for WP REST API"** plugin and add
+   its secret key to `wp-config.php` per its two-line instructions.
+2. Trial without config edits: open the deployed app with `?auth=jwt`, sign
+   in with a test member account, open a locked article (`?auth=clear` ends
+   the trial).
+3. Make permanent: `js/config.js` → `MEMBERSHIP.AUTH.mode: 'jwt'`.
+
+Security posture, for whoever reviews this: passwords (JWT mode only) go
+only to your own site's token endpoint; the app stores only the issued
+token; authenticated responses are never edge-cached (the bundled
+Cloudflare Worker bypasses cache whenever an Authorization header is
+present); cached member content is wiped on sign-out. Non-WordPress
+identity system? The form is the scaffold to wire into it — everything
+downstream of "get a credential" is done.
 
 ## Step 5 — Branding (30–60 minutes)
 

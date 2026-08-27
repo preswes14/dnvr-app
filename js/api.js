@@ -28,17 +28,27 @@
       else if (q && /^https?:\/\//.test(q)) localStorage.setItem(DEV_KEY, q.replace(/\/+$/, ''));
       const a = params.get('auth');
       if (a === 'clear') localStorage.removeItem(DEV_AUTH_KEY);
-      else if (a === 'jwt' || a === 'link') localStorage.setItem(DEV_AUTH_KEY, a);
+      else if (['jwt', 'link', 'cookie', 'auto'].includes(a)) localStorage.setItem(DEV_AUTH_KEY, a);
     } catch (e) { /* storage unavailable — fine */ }
   })();
 
   function devApiBase() {
     try { return localStorage.getItem(DEV_KEY); } catch (e) { return null; }
   }
-  function authMode() {
+  function configuredAuthMode() {
     let dev = null;
     try { dev = localStorage.getItem(DEV_AUTH_KEY); } catch (e) { /* fine */ }
-    return dev || (CFG.MEMBERSHIP && CFG.MEMBERSHIP.AUTH && CFG.MEMBERSHIP.AUTH.mode) || 'link';
+    return dev || (CFG.MEMBERSHIP && CFG.MEMBERSHIP.AUTH && CFG.MEMBERSHIP.AUTH.mode) || 'auto';
+  }
+  function sameOriginAsApi() {
+    try { return new URL(apiRoot()).origin === location.origin; } catch (e) { return false; }
+  }
+  // 'auto' resolves to the cookie bridge when the app is served from the
+  // WordPress domain itself, and to plain link-out anywhere else.
+  function authMode() {
+    const m = configuredAuthMode();
+    if (m !== 'auto') return m;
+    return sameOriginAsApi() ? 'cookie' : 'link';
   }
 
   function apiRoot() {
@@ -48,17 +58,60 @@
     return CFG.WP_BASE.replace(/\/+$/, '') + '/wp-json';
   }
 
-  // ── Member auth (scaffold — active only when auth mode is 'jwt') ────────
-  // Stores the JWT + display name locally after a successful sign-in and
-  // attaches it to API reads so members-only content unlocks in-app.
+  // ── Member auth ─────────────────────────────────────────────────────────
+  // Two ways a reader can be a recognized member:
+  //  'cookie' — the app is hosted on the WordPress domain and the reader is
+  //    logged in on the website; a tiny admin-ajax bridge (see
+  //    wordpress-snippet.php) hands the app a REST nonce, which we attach to
+  //    reads so members-only content unlocks. No in-app login at all.
+  //  'jwt' — explicit in-app sign-in; the issued token is stored locally and
+  //    attached to reads. For off-domain hosting / native wrappers.
   const AUTH_KEY = 'dnvr_auth_v1';
   const WPAuth = {
-    enabled() { return authMode() === 'jwt'; },
+    mode: authMode,
+    // True when the in-app username/password form should exist.
+    canFormSignIn() { return authMode() === 'jwt'; },
+    enabled() { return authMode() === 'jwt' || authMode() === 'cookie'; },
     _read() { try { return JSON.parse(localStorage.getItem(AUTH_KEY)); } catch (e) { return null; } },
-    isSignedIn() { return !!(WPAuth.enabled() && WPAuth._read()); },
-    displayName() { const a = WPAuth._read(); return (a && a.name) || null; },
+    _cookie: null,            // {nonce, name} from the bridge, in-memory only
+    isSignedIn() {
+      const m = authMode();
+      if (m === 'jwt') return !!WPAuth._read();
+      if (m === 'cookie') return !!WPAuth._cookie;
+      return false;
+    },
+    displayName() {
+      if (authMode() === 'cookie') return (WPAuth._cookie && WPAuth._cookie.name) || null;
+      const a = WPAuth._read();
+      return (a && a.name) || null;
+    },
     token() { const a = WPAuth._read(); return (a && a.token) || null; },
     onSessionExpired: null,   // app.js hooks this for a toast
+
+    nonceEndpoint() {
+      return (CFG.MEMBERSHIP && CFG.MEMBERSHIP.AUTH && CFG.MEMBERSHIP.AUTH.nonceEndpoint) ||
+        apiRoot().replace(/\/wp-json$/, '') + '/wp-admin/admin-ajax.php?action=dnvr_app_nonce';
+    },
+
+    /**
+     * Ask the site whether this browser is already logged in there (cookie
+     * mode only). Resolves true if the member state CHANGED. Safe to call
+     * any time — failures just mean "not signed in".
+     */
+    async probeCookie() {
+      if (authMode() !== 'cookie') return false;
+      const had = !!WPAuth._cookie;
+      try {
+        const res = await fetch(WPAuth.nonceEndpoint(), {
+          credentials: 'include', headers: { Accept: 'application/json' }
+        });
+        const body = res.ok ? await res.json() : null;
+        WPAuth._cookie = body && body.ok && body.nonce ? { nonce: body.nonce, name: body.name } : null;
+      } catch (e) {
+        WPAuth._cookie = null;
+      }
+      return !!WPAuth._cookie !== had;
+    },
 
     async login(username, password) {
       const endpoint = (CFG.MEMBERSHIP && CFG.MEMBERSHIP.AUTH && CFG.MEMBERSHIP.AUTH.tokenEndpoint) ||
@@ -93,16 +146,38 @@
       if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
     }
     const headers = { Accept: 'application/json' };
-    const token = WPAuth.enabled() && WPAuth.token();
+    const mode = authMode();
+    const token = mode === 'jwt' && WPAuth.token();
     if (token) headers.Authorization = 'Bearer ' + token;
-    const res = await fetch(url.toString(), { headers });
+    const nonce = mode === 'cookie' && WPAuth._cookie && WPAuth._cookie.nonce;
+    if (nonce) headers['X-WP-Nonce'] = nonce;
+    const res = await fetch(url.toString(), {
+      headers,
+      credentials: mode === 'cookie' ? 'include' : 'same-origin'
+    });
     if (!res.ok) {
-      // An expired/revoked token can make reads fail — drop it, tell the
-      // app, and retry the request once anonymously.
-      if ((res.status === 401 || res.status === 403) && token && !_retrying) {
+      const authFailed = res.status === 401 || res.status === 403;
+      // Expired JWT → drop it, tell the app, retry once anonymously.
+      if (authFailed && token && !_retrying) {
         WPAuth.signOut();
         if (WPAuth.onSessionExpired) WPAuth.onSessionExpired();
-        return getJSON(path, params, true);
+        return getJSON(path, params, 'final');
+      }
+      // Expired REST nonce (they live ~a day) → re-probe the bridge once for
+      // a fresh one; if the site session itself is gone, fall to anonymous.
+      if (authFailed && nonce && !_retrying) {
+        await WPAuth.probeCookie();
+        if (WPAuth._cookie && WPAuth._cookie.nonce !== nonce) {
+          return getJSON(path, params, 'refreshed');
+        }
+        WPAuth._cookie = null;
+        if (WPAuth.onSessionExpired) WPAuth.onSessionExpired();
+        return getJSON(path, params, 'final');
+      }
+      if (authFailed && nonce && _retrying === 'refreshed') {
+        WPAuth._cookie = null;
+        if (WPAuth.onSessionExpired) WPAuth.onSessionExpired();
+        return getJSON(path, params, 'final');
       }
       const err = new Error('HTTP ' + res.status + ' from ' + url.pathname);
       err.status = res.status;
@@ -181,25 +256,59 @@
     devApiBase,
 
     /**
-     * Resolve config section slugs → live category IDs.
-     * Returns [{slug, label, id}] for sections that exist on the site,
-     * de-duplicated by label (config may list slug variants).
+     * Resolve config sections → live category IDs, fuzzily.
+     * A category matches a keyword when the keyword is one of its slug/name
+     * words, or (for keywords of 4+ chars) a substring of either — so config
+     * 'nuggets' finds "Denver Nuggets" / denver-nuggets / nuggets-news.
+     * Exact slug matches win; otherwise the biggest matching category does.
+     * If fewer than three config sections match, tabs are topped up from the
+     * site's largest categories so the feed always has real navigation.
      */
     async fetchSections() {
-      const { data } = await getJSON('/wp/v2/categories', {
-        per_page: 100, hide_empty: true, _fields: 'id,name,slug,parent,count'
-      });
-      const bySlug = new Map(data.map(c => [c.slug, c]));
+      const cats = [];
+      for (let page = 1; page <= 3; page++) {
+        const { data, totalPages } = await getJSON('/wp/v2/categories', {
+          per_page: 100, page, hide_empty: true, _fields: 'id,name,slug,parent,count'
+        });
+        cats.push(...data);
+        if (!totalPages || page >= totalPages) break;
+      }
+
+      const matches = (cat, keyword) => {
+        const kw = String(keyword).toLowerCase();
+        const slug = (cat.slug || '').toLowerCase();
+        const name = (cat.name || '').toLowerCase();
+        if (slug.split(/[-_]/).includes(kw) || name.split(/\s+/).includes(kw)) return true;
+        return kw.length >= 4 && (slug.includes(kw) || name.includes(kw));
+      };
+
       const out = [];
-      const seenLabels = new Set();
+      const usedIds = new Set();
       for (const s of CFG.SECTIONS) {
-        const cat = bySlug.get(s.slug);
-        if (!cat || seenLabels.has(s.label)) continue;
-        seenLabels.add(s.label);
+        const keywords = [s.slug].concat(s.alt || []);
+        const candidates = cats.filter(c =>
+          !usedIds.has(c.id) && keywords.some(kw => matches(c, kw)));
+        if (!candidates.length) continue;
+        const cat = candidates.find(c => c.slug === s.slug) ||
+          candidates.sort((a, b) => (b.count || 0) - (a.count || 0))[0];
+        usedIds.add(cat.id);
         out.push({ slug: s.slug, label: s.label, id: cat.id });
       }
+
       WPApi.excludedIds = (CFG.EXCLUDED_SLUGS || [])
-        .map(slug => bySlug.get(slug)).filter(Boolean).map(c => c.id);
+        .flatMap(slug => cats.filter(c => c.slug === slug)).map(c => c.id);
+
+      if (out.length < 3) {
+        const fillers = cats
+          .filter(c => !usedIds.has(c.id) && c.slug !== 'uncategorized' &&
+            !WPApi.excludedIds.includes(c.id))
+          .sort((a, b) => (b.count || 0) - (a.count || 0))
+          .slice(0, 7 - out.length);
+        for (const cat of fillers) {
+          usedIds.add(cat.id);
+          out.push({ slug: cat.slug, label: cat.name, id: cat.id });
+        }
+      }
       return out;
     },
 

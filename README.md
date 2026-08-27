@@ -23,13 +23,20 @@ admin work and **zero backend work**.
 - **Diehard-aware.** Members-only articles are a first-class feature, not an
   error state: they carry a DIEHARD badge in the feed, and opening one shows a
   branded card with the membership's benefits, a **Become a Diehard** button
-  (→ thednvr.com/join), and a link to read on the site. The full in-app member
-  **sign-in is scaffolded and tested**: flip `MEMBERSHIP.AUTH.mode` to `'jwt'`
-  (after a one-time WordPress plugin install, see the setup guide) and members
-  sign in with their site login — locked articles then open right in the app,
-  badges clear, and sign-out re-locks everything and wipes cached member
-  content. The app never works around access controls; it renders exactly what
-  the site's API returns for the current reader.
+  (→ thednvr.com/join), and a link to read on the site. Member access comes in
+  two tested flavors:
+  - **Website login carry-over (recommended).** Host the app on the WordPress
+    domain (e.g. `thednvr.com/app/`) and install the ~10-line bridge in
+    `wordpress-snippet.php` — a Diehard who is logged in on the site opens the
+    app already recognized: locked articles open, badges clear, no app login
+    screen exists. The default `auto` mode detects same-domain hosting by
+    itself.
+  - **In-app sign-in (JWT)** for off-domain hosting or a future App Store
+    wrapper: members sign in with their site credentials; sign-out re-locks
+    everything and wipes cached member content.
+  Either way the app never works around access controls; WordPress and the
+  paywall plugin decide every request, and the app renders exactly what the
+  site's API returns for the current reader.
 
 ## Tech
 
@@ -48,6 +55,7 @@ dnvr-app/
 ├── manifest.webmanifest    PWA manifest
 ├── icons/                  placeholder icons — replace with official logo
 ├── cors-proxy-worker.js    optional Cloudflare Worker (only if the site firewall blocks CORS)
+├── wordpress-snippet.php   ~10-line bridge that lets website logins carry into the app
 └── dev/
     ├── mock-wp-server.js   local dev server with a mock WP API (fixture data)
     ├── smoke.js            headless browser test of all core flows
@@ -72,11 +80,14 @@ Automated checks (needs `playwright-core` + Chromium):
 node dev/smoke.js
 ```
 
-Verifies: live feed rendering, section tabs, infinite scroll, search, article
-sanitization (script/handler stripping), saving for offline, the labeled
-sample-content fallback, and the full membership arc — DIEHARD feed badges,
-the Become-a-Diehard card on locked articles, rejected bad credentials,
-sign-in unlocking members-only articles in-app, and sign-out re-locking them.
+Verifies: live feed rendering, fuzzy section-tab resolution (prefixed team
+slugs like `denver-nuggets` still become tabs), infinite scroll, search,
+article sanitization (script/handler stripping), saving for offline, the
+labeled sample-content fallback, and the full membership arc in both flavors —
+DIEHARD feed badges, the Become-a-Diehard card on locked articles, rejected
+bad credentials, JWT sign-in unlocking members-only articles and sign-out
+re-locking them, and the cookie bridge recognizing a website login at boot
+with no in-app form.
 
 ## Design notes
 
