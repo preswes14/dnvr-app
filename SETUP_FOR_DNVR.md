@@ -151,9 +151,10 @@ All placeholders, clearly marked:
   yellow-gold matched to your public branding; if the exact style-guide value
   differs, swap `--accent` (and `--accent-text` for light mode). Everything is
   token-driven.
-- **Icons**: replace the four PNGs in `icons/` with renders of the real DNVR
-  logo — sizes 512, 192, 180, plus a "maskable" 512 with the logo inside the
-  middle ~76% (Android crops the edges). Keep the filenames.
+- **Icons**: `icons/` already carries the DNVR logo. To swap art later,
+  replace the four PNGs (keep the filenames) — sizes 512, 192, 180, plus a
+  "maskable" 512 with the mark inside the middle ~76% (Android crops the
+  edges).
 - **Name/tagline/links**: `js/config.js`.
 - **App-update note**: whenever you change app files, bump the `VERSION`
   string at the top of `sw.js` so installed copies pick up the update.

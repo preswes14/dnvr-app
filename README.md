@@ -24,8 +24,10 @@ A fast, installable news app for [DNVR](https://thednvr.com)'s articles — buil
 gift by a fan, designed so the DNVR team can take it live with about half a day of
 admin work and **zero backend work**.
 
-> **[SETUP_FOR_DNVR.md](SETUP_FOR_DNVR.md) is the half-day launch guide.**
-> This file is the technical overview.
+> **[INTEGRATION.md](INTEGRATION.md) — the short guide for your web person:**
+> app live on thednvr.com with Diehard logins carrying over, in about an hour.
+> **[SETUP_FOR_DNVR.md](SETUP_FOR_DNVR.md)** is the long version (alternatives,
+> troubleshooting, App Store path). This file is the technical overview.
 
 ## What it is
 
@@ -73,7 +75,7 @@ dnvr-app/
 ├── js/demo-data.js         clearly-labeled sample content (offline/unconfigured fallback)
 ├── sw.js                   service worker: offline + caching
 ├── manifest.webmanifest    PWA manifest
-├── icons/                  placeholder icons — replace with official logo
+├── icons/                  app icons (the DNVR logo)
 ├── cors-proxy-worker.js    optional Cloudflare Worker (only if the site firewall blocks CORS)
 ├── wordpress-snippet.php   ~10-line bridge that lets website logins carry into the app
 └── dev/
