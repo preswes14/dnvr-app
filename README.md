@@ -1,5 +1,25 @@
 # DNVR News — a reader app for thednvr.com
 
+## Put it on your phone right now (no App Store)
+
+**The app is live at → https://preswes14.github.io/dnvr-app/**
+
+**iPhone / iPad**
+1. Open the link above in **Safari** (it must be Safari — Apple's rule).
+2. Tap the **Share** button — the square with the up arrow at the bottom of the screen.
+3. Scroll down, tap **"Add to Home Screen,"** then tap **Add**.
+
+**Android**
+1. Open the link above in **Chrome**.
+2. Tap the **⋮ menu** in the top-right corner.
+3. Tap **"Add to Home screen"** (on some phones it says **"Install app"**), then confirm.
+
+A DNVR icon lands on your Home Screen and opens full-screen like any other app —
+live articles, team sections, search, offline reading. Remove it like any app
+(press and hold → Remove App).
+
+---
+
 A fast, installable news app for [DNVR](https://thednvr.com)'s articles — built as a
 gift by a fan, designed so the DNVR team can take it live with about half a day of
 admin work and **zero backend work**.
