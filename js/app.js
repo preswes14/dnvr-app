@@ -717,7 +717,21 @@
     });
 
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-      navigator.serviceWorker.register('sw.js').catch(() => { /* non-fatal */ });
+      // Updates used to be one-visit-behind: the old service worker serves
+      // its cached shell for the visit that downloads the new version, so a
+      // tester saw each deploy only on their SECOND launch. Now, when a new
+      // version takes over mid-visit, reload once so the fresh build shows
+      // immediately. First-ever visits (no prior controller) never reload.
+      const hadController = !!navigator.serviceWorker.controller;
+      let swRefreshed = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController || swRefreshed) return;
+        swRefreshed = true;
+        location.reload();
+      });
+      navigator.serviceWorker.register('sw.js')
+        .then(reg => { if (reg && reg.update) reg.update().catch(() => {}); })
+        .catch(() => { /* non-fatal */ });
     }
   }
 
