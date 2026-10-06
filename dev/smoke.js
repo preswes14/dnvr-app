@@ -215,6 +215,35 @@ function check(name, ok, detail) {
       (await page4.locator('#signInForm').count()) === 0);
     await ctx4.close();
 
+    // ── Install banner: right steps per platform, dismiss sticks ──
+    check('no install banner on desktop',
+      (await page.locator('.install-banner').count()) === 0);
+
+    const IOS_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+    const ctx5 = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: IOS_UA });
+    const page5 = await ctx5.newPage();
+    page5.on('pageerror', e => errors.push('pageerror(ios-banner): ' + e.message));
+    await page5.goto(`${BASE}/?api=${BASE}`);
+    await page5.waitForSelector('.install-banner', { timeout: 8000 });
+    check('iPhone Safari sees Add-to-Home-Screen steps at the top',
+      (await page5.locator('.install-banner').textContent()).includes('Add to Home Screen'));
+    await page5.click('#installDismiss');
+    check('banner dismisses', (await page5.locator('.install-banner').count()) === 0);
+    await page5.reload();
+    await page5.waitForSelector('.card[data-id]', { timeout: 8000 });
+    check('dismissal survives reload', (await page5.locator('.install-banner').count()) === 0);
+    await ctx5.close();
+
+    const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+    const ctx6 = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: ANDROID_UA });
+    const page6 = await ctx6.newPage();
+    page6.on('pageerror', e => errors.push('pageerror(android-banner): ' + e.message));
+    await page6.goto(`${BASE}/?api=${BASE}`);
+    await page6.waitForSelector('.install-banner', { timeout: 8000 });
+    check('Android sees Add-to-Home-screen steps at the top',
+      (await page6.locator('.install-banner').textContent()).includes('Add to Home screen'));
+    await ctx6.close();
+
     check('no console or page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   } catch (e) {
     check('smoke run completed', false, e.message);

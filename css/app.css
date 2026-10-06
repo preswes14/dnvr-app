@@ -290,3 +290,19 @@ button { font: inherit; }
   .shimmer, .spinner { animation: none; }
   .card:active { transform: none; }
 }
+
+/* ── Install banner (top-of-app, phones only) ────────────── */
+#installDock { max-width: var(--maxw); margin: 0 auto; padding: 0 14px; }
+.install-banner {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 10px; padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: var(--bg-elev); border-radius: 12px;
+}
+.install-msg { flex: 1; font-size: 0.92rem; line-height: 1.45; }
+.install-msg .share-glyph { vertical-align: -2px; margin: 0 2px; color: var(--accent-text); }
+.install-btn { margin-left: 6px; padding: 8px 16px; }
+.install-close {
+  background: none; border: 0; color: var(--ink-dim);
+  font-size: 1rem; cursor: pointer; padding: 4px 6px; flex: 0 0 auto;
+}

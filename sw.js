@@ -7,7 +7,7 @@
  *
  * Bump VERSION on any deploy that changes app files.
  */
-const VERSION = 'v1.2.0';
+const VERSION = 'v1.3.0';
 const SHELL_CACHE = 'dnvr-shell-' + VERSION;
 const API_CACHE = 'dnvr-api-v1';
 const IMG_CACHE = 'dnvr-img-v1';
