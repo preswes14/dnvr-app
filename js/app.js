@@ -112,16 +112,13 @@
   }
   function readFeedCache() { return store(FEED_CACHE_KEY); }
 
-  // ── Install banner (top of the app, phones only) ─────────────────────────
-  // Tells a browser visitor how to put the app on their Home Screen — the
-  // right steps for their platform — and disappears once installed (or
-  // dismissed). Desktop gets nothing.
-  const INSTALL_DISMISS_KEY = 'dnvr_install_dismissed_v1';
+  // ── Platform helpers ─────────────────────────────────────────────────────
+  // The top-of-app install BANNER lives inline in index.html (deliberately:
+  // the page is fetched network-first, so instructions reach devices still
+  // running cached JS). These helpers serve the Account tab's install card.
   const UA = navigator.userAgent;
   const IS_IOS = /iphone|ipad|ipod/i.test(UA);
   const IS_ANDROID = /android/i.test(UA);
-  // On iOS only Safari can install; these tokens mark Chrome/Firefox/Edge/etc.
-  const IS_IOS_SAFARI = IS_IOS && !/crios|fxios|edgios|opios|gsa/i.test(UA);
   const SHARE_GLYPH = `<svg class="share-glyph" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
     <path d="M12 3v11M12 3L8.5 6.5M12 3l3.5 3.5M7.5 10H5v11h14V10h-2.5"
       stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -129,59 +126,6 @@
   function isStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   }
-
-  // Chrome on Android hands us a real install prompt we can trigger from a
-  // button; everywhere else the banner gives written steps.
-  let deferredInstallPrompt = null;
-  window.addEventListener('beforeinstallprompt', e => {
-    e.preventDefault();
-    deferredInstallPrompt = e;
-    renderInstallBanner();
-  });
-  window.addEventListener('appinstalled', () => {
-    deferredInstallPrompt = null;
-    renderInstallBanner();
-  });
-
-  function installBannerHTML() {
-    if (isStandalone() || store(INSTALL_DISMISS_KEY)) return '';
-    let steps;
-    if (IS_IOS) {
-      steps = IS_IOS_SAFARI
-        ? `Tap <strong>Share</strong> ${SHARE_GLYPH} below, then <strong>“Add to Home Screen.”</strong>`
-        : `Open this page in <strong>Safari</strong>, tap <strong>Share</strong> ${SHARE_GLYPH},
-           then <strong>“Add to Home Screen.”</strong>`;
-    } else if (IS_ANDROID) {
-      steps = deferredInstallPrompt
-        ? `<button class="btn primary install-btn" id="installBtn">Install</button>`
-        : `Tap the <strong>⋮ menu</strong>, then <strong>“Add to Home screen.”</strong>`;
-    } else {
-      return '';
-    }
-    return `
-    <div class="install-banner" role="note">
-      <span class="install-msg"><strong>Get the app on your Home Screen:</strong> ${steps}</span>
-      <button class="install-close" id="installDismiss" aria-label="Dismiss">✕</button>
-    </div>`;
-  }
-
-  function renderInstallBanner() {
-    const dock = $('#installDock');
-    if (!dock) return;
-    dock.innerHTML = installBannerHTML();
-    const dis = $('#installDismiss');
-    if (dis) dis.addEventListener('click', () => { store(INSTALL_DISMISS_KEY, true); renderInstallBanner(); });
-    const ib = $('#installBtn');
-    if (ib) ib.addEventListener('click', async () => {
-      const p = deferredInstallPrompt;
-      if (!p) return;
-      deferredInstallPrompt = null;
-      p.prompt();
-      try { await p.userChoice; } catch (e) { /* user closed the sheet */ }
-      renderInstallBanner();
-    });
-  }
-
 
   // ── Data loading ─────────────────────────────────────────────────────────
   async function ensureSections() {
@@ -685,7 +629,6 @@
     document.title = CFG.SITE_NAME + ' — News';
     wireChrome();
     updateNavBadge();
-    renderInstallBanner();
     WPAuth.onSessionExpired = () => toast('Signed out — your session expired');
 
     // Instant paint from cache, then refresh from network.

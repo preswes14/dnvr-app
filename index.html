@@ -31,7 +31,93 @@
     </div>
   </header>
 
+  <!-- Install instructions: deliberately INLINE in this file (markup, styles,
+       and logic), not in js/app.js — page navigations are always fetched
+       network-first, so these instructions reach every visitor immediately
+       after a deploy, even when a device is still running old cached JS/CSS. -->
   <div id="installDock"></div>
+  <style>
+    #installDock { max-width: var(--maxw, 680px); margin: 0 auto; padding: 0 14px; }
+    .install-banner {
+      display: flex; align-items: center; gap: 10px;
+      margin-top: 10px; padding: 10px 12px;
+      border: 1px solid #ffc629; border-radius: 12px;
+      background: rgba(127, 127, 127, 0.08);
+    }
+    .install-msg { flex: 1; font-size: 0.92rem; line-height: 1.45; }
+    .install-msg .share-glyph { vertical-align: -2px; margin: 0 2px; }
+    .install-btn { margin-left: 6px; }
+    .install-close {
+      background: none; border: 0; color: inherit; opacity: 0.6;
+      font-size: 1rem; cursor: pointer; padding: 4px 6px; flex: 0 0 auto;
+    }
+  </style>
+  <script>
+  (function () {
+    var KEY = 'dnvr_install_dismissed_v1';
+    var dock = document.getElementById('installDock');
+    var pendingPrompt = null;
+
+    function dismissed() {
+      try { return !!JSON.parse(localStorage.getItem(KEY)); } catch (e) { return false; }
+    }
+    function standalone() {
+      try {
+        return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+          navigator.standalone === true;
+      } catch (e) { return false; }
+    }
+
+    var ua = navigator.userAgent;
+    var ios = /iphone|ipad|ipod/i.test(ua);
+    var android = /android/i.test(ua);
+    var iosSafari = ios && !/crios|fxios|edgios|opios|gsa/i.test(ua);
+    var SHARE = '<svg class="share-glyph" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">' +
+      '<path d="M12 3v11M12 3L8.5 6.5M12 3l3.5 3.5M7.5 10H5v11h14V10h-2.5" ' +
+      'stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    function paint() {
+      if (!dock) return;
+      if (standalone() || dismissed() || (!ios && !android)) { dock.innerHTML = ''; return; }
+      var steps;
+      if (ios) {
+        steps = iosSafari
+          ? 'Tap <strong>Share</strong> ' + SHARE + ' below, then <strong>“Add to Home Screen.”</strong>'
+          : 'Open this page in <strong>Safari</strong>, tap <strong>Share</strong> ' + SHARE +
+            ', then <strong>“Add to Home Screen.”</strong>';
+      } else {
+        steps = pendingPrompt
+          ? '<button class="btn primary install-btn" id="installBtn">Install</button>'
+          : 'Tap the <strong>⋮ menu</strong>, then <strong>“Add to Home screen.”</strong>';
+      }
+      dock.innerHTML =
+        '<div class="install-banner" role="note">' +
+        '<span class="install-msg"><strong>Get the app on your Home Screen:</strong> ' + steps + '</span>' +
+        '<button class="install-close" id="installDismiss" aria-label="Dismiss">✕</button></div>';
+      var dis = document.getElementById('installDismiss');
+      if (dis) dis.onclick = function () {
+        try { localStorage.setItem(KEY, 'true'); } catch (e) {}
+        dock.innerHTML = '';
+      };
+      var ib = document.getElementById('installBtn');
+      if (ib) ib.onclick = function () {
+        var p = pendingPrompt;
+        pendingPrompt = null;
+        if (!p) return;
+        p.prompt();
+        if (p.userChoice && p.userChoice.then) p.userChoice.then(paint, paint); else paint();
+      };
+    }
+
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      pendingPrompt = e;
+      paint();
+    });
+    window.addEventListener('appinstalled', function () { pendingPrompt = null; paint(); });
+    paint();
+  })();
+  </script>
 
   <main id="view" aria-live="polite"></main>
 
